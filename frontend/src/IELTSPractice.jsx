@@ -99,6 +99,56 @@ function ProgressDots({ total, current }) {
 
 function ImageCard({ item, showKey, onToggleKey, onImageError, imgError }) {
   const [keyError, setKeyError] = useState(false);
+  const [zoom, setZoom]         = useState(1);
+  const [offset, setOffset]     = useState({ x: 0, y: 0 });
+  const [dragging, setDragging] = useState(false);
+  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+
+  const resetZoom = () => { setZoom(1); setOffset({ x: 0, y: 0 }); };
+  const zoomIn    = () => setZoom((z) => Math.min(z + 0.25, 4));
+  const zoomOut   = () => setZoom((z) => { const n = Math.max(z - 0.25, 1); if (n === 1) setOffset({ x:0, y:0 }); return n; });
+
+  // Mouse wheel zoom
+  const onWheel = (e) => {
+    e.preventDefault();
+    if (e.deltaY < 0) zoomIn();
+    else zoomOut();
+  };
+
+  // Drag to pan when zoomed
+  const onMouseDown = (e) => {
+    if (zoom <= 1) return;
+    setDragging(true);
+    setDragStart({ x: e.clientX - offset.x, y: e.clientY - offset.y });
+  };
+  const onMouseMove = (e) => {
+    if (!dragging) return;
+    setOffset({ x: e.clientX - dragStart.x, y: e.clientY - dragStart.y });
+  };
+  const onMouseUp = () => setDragging(false);
+
+  // Touch pinch zoom
+  const lastDist = useState(null);
+  const onTouchStart = (e) => {
+    if (e.touches.length === 2) {
+      const dx = e.touches[0].clientX - e.touches[1].clientX;
+      const dy = e.touches[0].clientY - e.touches[1].clientY;
+      lastDist[1](Math.hypot(dx, dy));
+    }
+  };
+  const onTouchMove = (e) => {
+    if (e.touches.length === 2) {
+      const dx = e.touches[0].clientX - e.touches[1].clientX;
+      const dy = e.touches[0].clientY - e.touches[1].clientY;
+      const dist = Math.hypot(dx, dy);
+      if (lastDist[0]) {
+        const delta = dist - lastDist[0];
+        setZoom((z) => Math.min(Math.max(z + delta * 0.01, 1), 4));
+      }
+      lastDist[1](dist);
+    }
+  };
+
   return (
     <div style={{
       background:   "#1a1510",
@@ -136,21 +186,65 @@ function ImageCard({ item, showKey, onToggleKey, onImageError, imgError }) {
         </button>
       </div>
 
-      {/* Image area */}
+      {/* Zoom controls */}
       <div style={{
-        minHeight:      400,
-        display:        "flex",
-        alignItems:     "center",
-        justifyContent: "center",
-        padding:        24,
-        background:     "#100e0a",
+        display:"flex", alignItems:"center", gap:8,
+        padding:"8px 20px", background:"#180f08",
+        borderBottom:"1px solid #2a2318",
       }}>
+        <button onClick={zoomOut} disabled={zoom <= 1} style={zoomBtnStyle(zoom <= 1)}>－</button>
+        <div style={{
+          fontFamily:"'DM Mono', monospace", fontSize:12,
+          color:"#8a7a65", minWidth:48, textAlign:"center",
+        }}>{Math.round(zoom * 100)}%</div>
+        <button onClick={zoomIn}  disabled={zoom >= 4} style={zoomBtnStyle(zoom >= 4)}>＋</button>
+        <button onClick={resetZoom} style={{
+          marginLeft:4, background:"transparent",
+          border:"1px solid #3a3020", borderRadius:6,
+          padding:"4px 10px", color:"#5a4a35",
+          cursor:"pointer", fontSize:11,
+          fontFamily:"'DM Mono', monospace",
+        }}>Reset</button>
+        {zoom > 1 && (
+          <span style={{ fontSize:11, color:"#3a3020", fontFamily:"'DM Mono', monospace", marginLeft:4 }}>
+            drag to pan
+          </span>
+        )}
+      </div>
+
+      {/* Image area */}
+      <div
+        onWheel={onWheel}
+        onMouseDown={onMouseDown}
+        onMouseMove={onMouseMove}
+        onMouseUp={onMouseUp}
+        onMouseLeave={onMouseUp}
+        onTouchStart={onTouchStart}
+        onTouchMove={onTouchMove}
+        onTouchEnd={() => lastDist[1](null)}
+        style={{
+          minHeight:      400,
+          display:        "flex",
+          alignItems:     "center",
+          justifyContent: "center",
+          padding:        24,
+          background:     "#100e0a",
+          overflow:       "hidden",
+          cursor:         zoom > 1 ? (dragging ? "grabbing" : "grab") : "default",
+          userSelect:     "none",
+        }}>
         {!showKey ? (
           imgError ? <ImageError url={item.url} icon="🖼" label="Image not found" /> : (
             <img src={item.url}
               alt={`Test ${item.test} Part ${item.part}`}
               onError={onImageError}
-              style={{ maxWidth:"100%", maxHeight:600, borderRadius:8, objectFit:"contain", boxShadow:"0 4px 20px rgba(0,0,0,0.4)" }}
+              style={{
+                maxWidth:"100%", maxHeight:600, borderRadius:8,
+                objectFit:"contain", boxShadow:"0 4px 20px rgba(0,0,0,0.4)",
+                transform:`scale(${zoom}) translate(${offset.x / zoom}px, ${offset.y / zoom}px)`,
+                transformOrigin:"center center",
+                transition: dragging ? "none" : "transform 0.15s ease",
+              }}
             />
           )
         ) : (
@@ -158,13 +252,31 @@ function ImageCard({ item, showKey, onToggleKey, onImageError, imgError }) {
             <img src={item.answerKey}
               alt={`Key Test ${item.test} Part ${item.part}`}
               onError={() => setKeyError(true)}
-              style={{ maxWidth:"100%", maxHeight:600, borderRadius:8, objectFit:"contain", boxShadow:"0 4px 20px rgba(0,0,0,0.4)" }}
+              style={{
+                maxWidth:"100%", maxHeight:600, borderRadius:8,
+                objectFit:"contain", boxShadow:"0 4px 20px rgba(0,0,0,0.4)",
+                transform:`scale(${zoom}) translate(${offset.x / zoom}px, ${offset.y / zoom}px)`,
+                transformOrigin:"center center",
+                transition: dragging ? "none" : "transform 0.15s ease",
+              }}
             />
           )
         )}
       </div>
     </div>
   );
+}
+
+function zoomBtnStyle(disabled) {
+  return {
+    background:"transparent",
+    border:"1px solid " + (disabled ? "#2a2318" : "#3a3020"),
+    borderRadius:6, padding:"4px 10px",
+    color: disabled ? "#2a2318" : "#C8A96E",
+    cursor: disabled ? "not-allowed" : "pointer",
+    fontSize:16, fontFamily:"'DM Mono', monospace",
+    transition:"all 0.2s",
+  };
 }
 
 function Tag({ color, children }) {
