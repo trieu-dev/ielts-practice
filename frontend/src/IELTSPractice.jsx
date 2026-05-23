@@ -48,26 +48,36 @@ function shuffle(arr) {
   return a;
 }
 
-function buildSession(user, repo, branch, testNum) {
+function buildSession(user, repo, branch) {
   const base = `https://raw.githubusercontent.com/${user}/${repo}/${branch}`;
 
-  const reading = shuffle(READING_PARTS).map((p) => ({
-    id:        `r-t${testNum}-p${p}`,
-    test:      testNum,
-    part:      p,
-    url:       `${base}/reading/test${testNum}-part${p}.png`,
-    answerKey: `${base}/reading/test${testNum}-part${p}-key.png`,
-  }));
+  // Shuffle 8 tests and assign one unique test per part
+  const testsForReading   = shuffle(Array.from({ length: TOTAL_TESTS }, (_, i) => i + 1));
+  const testsForListening = shuffle(Array.from({ length: TOTAL_TESTS }, (_, i) => i + 1));
 
-  const listening = shuffle(LISTENING_PARTS).map((p) => ({
-    id:        `l-t${testNum}-p${p}`,
-    test:      testNum,
-    part:      p,
-    url:       `${base}/listening/test${testNum}-part${p}.png`,
-    answerKey: `${base}/listening/test${testNum}-part${p}-key.png`,
-  }));
+  const reading = READING_PARTS.map((p, i) => {
+    const t = testsForReading[i];
+    return {
+      id:        `r-t${t}-p${p}`,
+      test:      t,
+      part:      p,
+      url:       `${base}/reading/test${t}-part${p}.png`,
+      answerKey: `${base}/reading/test${t}-part${p}-key.png`,
+    };
+  });
 
-  return { testNum, reading, listening };
+  const listening = LISTENING_PARTS.map((p, i) => {
+    const t = testsForListening[i];
+    return {
+      id:        `l-t${t}-p${p}`,
+      test:      t,
+      part:      p,
+      url:       `${base}/listening/test${t}-part${p}.png`,
+      answerKey: `${base}/listening/test${t}-part${p}-key.png`,
+    };
+  });
+
+  return { reading, listening };
 }
 
 // ── Sub-components ────────────────────────────────────────────────────────────
@@ -260,8 +270,7 @@ export default function IELTSPractice() {
   const [usedCount,     setUsedCount]     = useState(() => loadUsed().length);
   
   const startSession = useCallback((cfg) => {
-    const testNum = pickNextTest();
-    setSession(buildSession(cfg.user, cfg.repo, cfg.branch, testNum));
+    setSession(buildSession(cfg.user, cfg.repo, cfg.branch));
     setActiveSection("reading");
     setCurrentIndex(0);
     setShowKey(false);
@@ -331,7 +340,7 @@ export default function IELTSPractice() {
           </div>
           <div style={{ fontSize:11, color:"#5a4a35", fontFamily:"'DM Mono', monospace", marginTop:2, letterSpacing:1 }}>
             {session
-              ? `TEST ${session.testNum} OF 8 · ${usedCount}/8 TESTS USED`
+              ? `RANDOM SESSION · ${READING_PARTS.length + LISTENING_PARTS.length} PARTS`
               : "RANDOM SESSION TRAINER"}
           </div>
         </div>
@@ -345,7 +354,7 @@ export default function IELTSPractice() {
       <div style={{ maxWidth:800, margin:"0 auto", padding:"24px 16px" }}>
 
         {/* ── Test cycle indicator ── */}
-        {session && (
+        {/* {session && (
           <div style={{
             display:"flex", alignItems:"center", justifyContent:"space-between",
             background:"#100e0a", border:"1px solid #2a2318",
@@ -370,7 +379,7 @@ export default function IELTSPractice() {
               {TOTAL_TESTS - usedCount} remaining
             </div>
           </div>
-        )}
+        )} */}
 
         {/* ── Section tabs ── */}
         {session && (
@@ -468,14 +477,15 @@ export default function IELTSPractice() {
                 <button key={item.id}
                   onClick={() => { setCurrentIndex(i); setShowKey(false); setImgError(false); }}
                   style={{
-                    padding:"8px 4px", borderRadius:8,
+                    padding:"10px 6px", borderRadius:8,
                     border:"1px solid " + (i === currentIndex ? "#C8A96E" : "#2a2318"),
                     background: i === currentIndex ? "#C8A96E11" : "transparent",
                     color:      i === currentIndex ? "#C8A96E"   : "#3a3020",
-                    cursor:"pointer", fontSize:11,
+                    cursor:"pointer",
                     fontFamily:"'DM Mono', monospace", transition:"all 0.2s",
+                    display:"flex", flexDirection:"column", alignItems:"center", gap:4,
                   }}>
-                  P{item.part}
+                  <span style={{ fontSize:13, fontWeight: i === currentIndex ? 700 : 400 }}>T{item.test} · <span style={{ fontSize:13, fontWeight: i === currentIndex ? 700 : 400 }}>P{item.part}</span></span>
                 </button>
               ))}
             </div>
