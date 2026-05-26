@@ -13,6 +13,36 @@ const LISTENING_PARTS = [1, 2, 3, 4]    as const;
 const TOTAL_TESTS     = 8;
 const STORAGE_KEY     = "ielts_used_tests";
 
+type PartHistory = Record<string, number[]>;
+
+function loadHistory(): PartHistory {
+  try { return JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "{}") as PartHistory; }
+  catch { return {}; }
+}
+
+function saveHistory(h: PartHistory): void {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(h));
+}
+
+const ALL_TESTS = Array.from({ length: TOTAL_TESTS }, (_, i) => i + 1); // [1..8]
+
+/** Pick a test for a given part key that hasn't been used recently.
+ *  Resets that part's history when all 8 tests are exhausted. */
+function pickTestForPart(key: string, history: PartHistory): { test: number; history: PartHistory } {
+  const used      = history[key] ?? [];
+  const remaining = ALL_TESTS.filter(t => !used.includes(t));
+
+  // All 8 used → reset this part's history
+  const pool   = remaining.length > 0 ? remaining : ALL_TESTS;
+  const picked = pool[Math.floor(Math.random() * pool.length)];
+  const newUsed = remaining.length > 0 ? [...used, picked] : [picked];
+
+  return {
+    test:    picked,
+    history: { ...history, [key]: newUsed },
+  };
+}
+
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface Config  { user: string; repo: string; branch: string; }
 interface Part    { id: string; test: number; part: number; url: string; answerKey: string; }
@@ -58,12 +88,38 @@ function shuffle<T>(arr: T[]): T[] {
 
 function buildSession(user: string, repo: string, branch: string): Session {
   const base = `https://raw.githubusercontent.com/${user}/${repo}/${branch}`;
-  const rTests = shuffle(Array.from({ length: TOTAL_TESTS }, (_, i) => i + 1));
-  const lTests = shuffle(Array.from({ length: TOTAL_TESTS }, (_, i) => i + 1));
-  return {
-    reading:   READING_PARTS.map((p, i)  => ({ id:`r-t${rTests[i]}-p${p}`, test:rTests[i], part:p, url:`${base}/reading/test${rTests[i]}-part${p}.png`,   answerKey:`${base}/reading/test${rTests[i]}-part${p}-key.png`   })),
-    listening: LISTENING_PARTS.map((p, i) => ({ id:`l-t${lTests[i]}-p${p}`, test:lTests[i], part:p, url:`${base}/listening/test${lTests[i]}-part${p}.png`, answerKey:`${base}/listening/test${lTests[i]}-part${p}-key.png` })),
-  };
+  let history = loadHistory();
+
+  const reading: Part[] = READING_PARTS.map(p => {
+    const key    = `r${p}`;
+    const result = pickTestForPart(key, history);
+    history      = result.history;
+    const t      = result.test;
+    return {
+      id:        `r-t${t}-p${p}`,
+      test:      t,
+      part:      p,
+      url:       `${base}/reading/test${t}-part${p}.png`,
+      answerKey: `${base}/reading/test${t}-part${p}-key.png`,
+    };
+  });
+
+  const listening: Part[] = LISTENING_PARTS.map(p => {
+    const key    = `l${p}`;
+    const result = pickTestForPart(key, history);
+    history      = result.history;
+    const t      = result.test;
+    return {
+      id:        `l-t${t}-p${p}`,
+      test:      t,
+      part:      p,
+      url:       `${base}/listening/test${t}-part${p}.png`,
+      answerKey: `${base}/listening/test${t}-part${p}-key.png`,
+    };
+  });
+
+  saveHistory(history);
+  return { reading, listening };
 }
 
 function uid(): string { return Math.random().toString(36).slice(2); }
@@ -593,7 +649,7 @@ export default function IELTSPractice() {
 
   const startSession = useCallback((cfg: Config): void => {
     setSession(buildSession(cfg.user, cfg.repo, cfg.branch));
-    setActiveSection("reading");
+    // setActiveSection("reading");
     setCurrentIndex(0);
     setShowKey(false);
     setImgError(false);
