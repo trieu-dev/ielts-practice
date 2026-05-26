@@ -106,7 +106,8 @@ function renderAnnotation(ctx: CanvasRenderingContext2D, ann: Annotation): void 
     ctx.stroke();
 
   } else if (ann.tool === "text" && ann.pos && ann.text) {
-    ctx.font      = `${ann.size * 6}px 'DM Mono', monospace`;
+    ctx.font      = `bold ${ann.size * 8}px 'DM Mono', monospace`;
+    ctx.fillStyle = ann.color;
     ctx.fillText(ann.text, ann.pos.x, ann.pos.y);
   }
   ctx.restore();
@@ -119,18 +120,17 @@ interface AnnotationCanvasProps {
   tool:           ToolType;
   color:          string;
   size:           number;
-  pendingText:    string;
+  pendingText:    string;   // keep as string — "yes" | ""
   onRequestText:  (pos: Point) => void;
   zoom:           number;
   offset:         Point;
 }
 
-function AnnotationCanvas({ annotations, onAdd, tool, color, size, pendingText, onRequestText, zoom, offset }: AnnotationCanvasProps) {
-  const canvasRef  = useRef<HTMLCanvasElement>(null);
-  const draftRef   = useRef<Annotation | null>(null);
-  const drawing    = useRef(false);
+function AnnotationCanvas({ annotations, onAdd, tool, color, size, pendingText, onRequestText }: AnnotationCanvasProps) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const draftRef  = useRef<Annotation | null>(null);
+  const drawing   = useRef(false);
 
-  // Resize canvas to match parent
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -143,23 +143,25 @@ function AnnotationCanvas({ annotations, onAdd, tool, color, size, pendingText, 
     return () => ro.disconnect();
   }, []);
 
-  // Redraw when annotations change
   useEffect(() => {
     const canvas = canvasRef.current;
     if (canvas) redraw(canvas, annotations, draftRef.current);
   }, [annotations]);
 
+  // Raw pixel position relative to canvas element — no zoom math
   function toCanvas(e: PointerEvent<HTMLCanvasElement>): Point {
     const rect = canvasRef.current!.getBoundingClientRect();
-    // Invert zoom/pan transform so annotation matches visual position
     return {
-      x: (e.clientX - rect.left - offset.x) / zoom,
-      y: (e.clientY - rect.top  - offset.y) / zoom,
+      x: e.clientX - rect.left,
+      y: e.clientY - rect.top,
     };
   }
 
   function onPointerDown(e: PointerEvent<HTMLCanvasElement>) {
-    if (tool === "text") { onRequestText(toCanvas(e)); return; }
+    if (tool === "text") {
+      onRequestText(toCanvas(e));
+      return;
+    }
     drawing.current = true;
     canvasRef.current?.setPointerCapture(e.pointerId);
     const pt = toCanvas(e);
@@ -191,10 +193,11 @@ function AnnotationCanvas({ annotations, onAdd, tool, color, size, pendingText, 
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
       style={{
-        position:    "absolute", inset: 0,
-        width:       "100%",    height: "100%",
-        cursor:      tool === "text" ? "text" : tool === "eraser" ? "cell" : "crosshair",
-        touchAction: "none",
+        position:      "absolute", inset: 0,
+        width:         "100%",     height: "100%",
+        cursor:        tool === "text" ? "text" : tool === "eraser" ? "cell" : "crosshair",
+        touchAction:   "none",
+        pointerEvents: pendingText ? "none" : "all",
       }}
     />
   );
@@ -208,21 +211,51 @@ interface TextInputProps {
   onCommit: (text: string) => void;
   onCancel: () => void;
 }
+
 function TextInput({ pos, color, size, onCommit, onCancel }: TextInputProps) {
   const [val, setVal] = useState("");
+  const ref = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    setTimeout(() => ref.current?.focus(), 50);
+  }, []);
+
   return (
-    <div style={{ position:"absolute", left: pos.x, top: pos.y - size * 6, zIndex:20 }}>
-      <input autoFocus value={val}
+    <div style={{
+      position:      "absolute",
+      left:          pos.x,
+      top:           pos.y,
+      zIndex:        30,
+      pointerEvents: "all",
+      transform:     "translate(0, -50%)", // vertically center on click point
+    }}>
+      <input
+        ref={ref}
+        value={val}
         onChange={e => setVal(e.target.value)}
-        onKeyDown={e => { if (e.key === "Enter") onCommit(val); if (e.key === "Escape") onCancel(); }}
-        onBlur={() => val ? onCommit(val) : onCancel()}
-        style={{
-          background:"rgba(0,0,0,0.7)", border:`1px solid ${color}`,
-          borderRadius:4, padding:"2px 6px", color, outline:"none",
-          fontFamily:"'DM Mono', monospace", fontSize: size * 6,
-          minWidth:80,
+        onKeyDown={e => {
+          e.stopPropagation();
+          if (e.key === "Enter" && val.trim()) onCommit(val.trim());
+          if (e.key === "Escape") onCancel();
         }}
-        placeholder="Type & Enter"
+        onBlur={() => {
+          if (val.trim()) onCommit(val.trim());
+          else onCancel();
+        }}
+        style={{
+          background:   "rgba(0,0,0,0.75)",
+          border:       `2px solid ${color}`,
+          borderRadius: 4,
+          padding:      "3px 8px",
+          color,
+          outline:      "none",
+          fontFamily:   "'DM Mono', monospace",
+          fontSize:     size * 6,
+          minWidth:     140,
+          boxShadow:    `0 0 0 3px ${color}33`,
+          whiteSpace:   "nowrap",
+        }}
+        placeholder="Type then Enter ↵"
       />
     </div>
   );
@@ -385,6 +418,8 @@ function ImageCard({ item, showKey, onToggleKey, onImageError, imgError, annotat
     setTextPending(null);
   };
 
+  const containerRef = useRef<HTMLDivElement>(null);
+
   return (
     <div style={{ background:"#1a1510", border:"1px solid #3a3020", borderRadius:16, overflow:"hidden", boxShadow:"0 8px 40px rgba(0,0,0,0.5)" }}>
 
@@ -419,16 +454,23 @@ function ImageCard({ item, showKey, onToggleKey, onImageError, imgError, annotat
       </div>
 
       {/* Image + canvas area */}
+      
       <div
-        onWheel={onWheel} onMouseDown={onMouseDown} onMouseMove={onMouseMove}
-        onMouseUp={onMouseUp} onMouseLeave={onMouseUp}
-        onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={()=>setLastDist(null)}
+        ref={containerRef}
+        onWheel={onWheel}
+        onMouseDown={onMouseDown}
+        onMouseMove={onMouseMove}
+        onMouseUp={onMouseUp}
+        onMouseLeave={onMouseUp}
+        onTouchStart={onTouchStart}
+        onTouchMove={onTouchMove}
+        onTouchEnd={() => setLastDist(null)}
         style={{
-          minHeight:400, display:"flex", alignItems:"center", justifyContent:"center",
-          padding:24, background:"#100e0a", overflow:"hidden",
-          position:"relative",
-          cursor: tool==="text"?"text": tool==="eraser"?"cell":"crosshair",
-          userSelect:"none",
+          minHeight: 400, display: "flex", alignItems: "center", justifyContent: "center",
+          padding: 24, background: "#100e0a", overflow: "hidden",
+          position: "relative",
+          cursor: tool === "text" ? "text" : tool === "eraser" ? "cell" : "crosshair",
+          userSelect: "none",
         }}
       >
         {/* Image */}
@@ -454,9 +496,12 @@ function ImageCard({ item, showKey, onToggleKey, onImageError, imgError, annotat
           />
         )}
 
-        {/* Text input overlay */}
+        {/* Text input overlay — positioned in raw container px, not canvas coords */}
         {textPending && !showKey && (
-          <TextInput pos={textPending} color={color} size={size}
+          <TextInput
+            pos={textPending}
+            color={color}
+            size={size}
             onCommit={handleTextCommit}
             onCancel={() => setTextPending(null)}
           />
