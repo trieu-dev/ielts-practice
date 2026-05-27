@@ -430,11 +430,6 @@ function ImageCard({ item, showKey, onToggleKey, onImageError, imgError, annotat
   const [size,         setSize]         = useState(2);
   const [textPending,  setTextPending]  = useState<Point|null>(null);
 
-  const resetZoom = () => { setZoom(1); setOffset({ x:0, y:0 }); };
-  const zoomIn    = () => setZoom(z => Math.min(z+0.25, 4));
-  const zoomOut   = () => setZoom(z => { const n=Math.max(z-0.25,1); if(n===1) setOffset({x:0,y:0}); return n; });
-
-  const onWheel = (e: WheelEvent<HTMLDivElement>) => { e.preventDefault(); e.deltaY<0?zoomIn():zoomOut(); };
   const onMouseDown = (e: MouseEvent<HTMLDivElement>) => {
     if (tool !== "pen" && tool !== "eraser" && tool !== "circle") return; // canvas handles drawing
     if (zoom<=1) return;
@@ -500,20 +495,10 @@ function ImageCard({ item, showKey, onToggleKey, onImageError, imgError, annotat
         onUndo={onUndo} onClear={onClear}
       />
 
-      {/* Zoom bar */}
-      <div style={{ display:"flex", alignItems:"center", gap:8, padding:"8px 20px", background:"#180f08", borderBottom:"1px solid #2a2318" }}>
-        <button onClick={zoomOut} disabled={zoom<=1} style={zoomBtnStyle(zoom<=1)}>－</button>
-        <div style={{ fontFamily:"'DM Mono', monospace", fontSize:12, color:"#8a7a65", minWidth:48, textAlign:"center" }}>{Math.round(zoom*100)}%</div>
-        <button onClick={zoomIn}  disabled={zoom>=4} style={zoomBtnStyle(zoom>=4)}>＋</button>
-        <button onClick={resetZoom} style={{ marginLeft:4, background:"transparent", border:"1px solid #3a3020", borderRadius:6, padding:"4px 10px", color:"#5a4a35", cursor:"pointer", fontSize:11, fontFamily:"'DM Mono', monospace" }}>Reset</button>
-        {zoom>1 && <span style={{ fontSize:11, color:"#3a3020", fontFamily:"'DM Mono', monospace", marginLeft:4 }}>scroll or drag to pan</span>}
-      </div>
-
       {/* Image + canvas area */}
       
       <div
         ref={containerRef}
-        onWheel={onWheel}
         onMouseDown={onMouseDown}
         onMouseMove={onMouseMove}
         onMouseUp={onMouseUp}
