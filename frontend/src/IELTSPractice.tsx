@@ -183,41 +183,40 @@ interface AnnotationCanvasProps {
 }
 
 function AnnotationCanvas({ annotations, onAdd, tool, color, size, pendingText, onRequestText }: AnnotationCanvasProps) {
-  const canvasRef  = useRef<HTMLCanvasElement>(null);
-  const draftRef   = useRef<Annotation | null>(null);
-  const drawing    = useRef(false);
-  const sizeRef    = useRef({ w: 0, h: 0 });
+  const canvasRef       = useRef<HTMLCanvasElement>(null);
+  const draftRef        = useRef<Annotation | null>(null);
+  const drawing         = useRef(false);
+  const annotationsRef  = useRef<Annotation[]>(annotations); // always fresh
 
-  // Single function that resizes then redraws atomically
-  function resizeAndRedraw() {
+  // Keep ref in sync with latest annotations every render
+  annotationsRef.current = annotations;
+
+  function redrawCanvas() {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const w = canvas.offsetWidth;
     const h = canvas.offsetHeight;
     if (w === 0 || h === 0) return;
-    // Only resize if dimensions actually changed
     if (canvas.width !== w || canvas.height !== h) {
       canvas.width  = w;
       canvas.height = h;
-      sizeRef.current = { w, h };
     }
-    redraw(canvas, annotations, draftRef.current);
+    redraw(canvas, annotationsRef.current, draftRef.current);
   }
 
-  // On mount: observe resize
+  // Mount: set up ResizeObserver — uses ref so always has fresh annotations
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const ro = new ResizeObserver(() => resizeAndRedraw());
+    const ro = new ResizeObserver(() => redrawCanvas());
     ro.observe(canvas);
-    // Initial draw
-    resizeAndRedraw();
+    redrawCanvas();
     return () => ro.disconnect();
-  }, []);
+  }, []); // run once on mount only
 
-  // Redraw whenever annotations change (navigation back, undo, clear, new stroke)
+  // Redraw whenever annotations change — ref is already updated above
   useEffect(() => {
-    resizeAndRedraw();
+    redrawCanvas();
   }, [annotations]);
 
   function toCanvas(e: PointerEvent<HTMLCanvasElement>): Point {
@@ -244,7 +243,7 @@ function AnnotationCanvas({ annotations, onAdd, tool, color, size, pendingText, 
     else d.end = pt;
     draftRef.current = { ...d };
     const canvas = canvasRef.current;
-    if (canvas) redraw(canvas, annotations, draftRef.current);
+    if (canvas) redraw(canvas, annotationsRef.current, draftRef.current);
   }
 
   function onPointerUp() {
