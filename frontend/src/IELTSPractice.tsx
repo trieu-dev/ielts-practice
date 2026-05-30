@@ -183,28 +183,43 @@ interface AnnotationCanvasProps {
 }
 
 function AnnotationCanvas({ annotations, onAdd, tool, color, size, pendingText, onRequestText }: AnnotationCanvasProps) {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const draftRef  = useRef<Annotation | null>(null);
-  const drawing   = useRef(false);
+  const canvasRef  = useRef<HTMLCanvasElement>(null);
+  const draftRef   = useRef<Annotation | null>(null);
+  const drawing    = useRef(false);
+  const sizeRef    = useRef({ w: 0, h: 0 });
 
+  // Single function that resizes then redraws atomically
+  function resizeAndRedraw() {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const w = canvas.offsetWidth;
+    const h = canvas.offsetHeight;
+    if (w === 0 || h === 0) return;
+    // Only resize if dimensions actually changed
+    if (canvas.width !== w || canvas.height !== h) {
+      canvas.width  = w;
+      canvas.height = h;
+      sizeRef.current = { w, h };
+    }
+    redraw(canvas, annotations, draftRef.current);
+  }
+
+  // On mount: observe resize
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const ro = new ResizeObserver(() => {
-      canvas.width  = canvas.offsetWidth;
-      canvas.height = canvas.offsetHeight;
-      redraw(canvas, annotations, draftRef.current);
-    });
+    const ro = new ResizeObserver(() => resizeAndRedraw());
     ro.observe(canvas);
+    // Initial draw
+    resizeAndRedraw();
     return () => ro.disconnect();
   }, []);
 
+  // Redraw whenever annotations change (navigation back, undo, clear, new stroke)
   useEffect(() => {
-    const canvas = canvasRef.current;
-    if (canvas) redraw(canvas, annotations, draftRef.current);
+    resizeAndRedraw();
   }, [annotations]);
 
-  // Raw pixel position relative to canvas element — no zoom math
   function toCanvas(e: PointerEvent<HTMLCanvasElement>): Point {
     const rect = canvasRef.current!.getBoundingClientRect();
     return {
@@ -214,10 +229,7 @@ function AnnotationCanvas({ annotations, onAdd, tool, color, size, pendingText, 
   }
 
   function onPointerDown(e: PointerEvent<HTMLCanvasElement>) {
-    if (tool === "text") {
-      onRequestText(toCanvas(e));
-      return;
-    }
+    if (tool === "text") { onRequestText(toCanvas(e)); return; }
     drawing.current = true;
     canvasRef.current?.setPointerCapture(e.pointerId);
     const pt = toCanvas(e);
@@ -250,7 +262,7 @@ function AnnotationCanvas({ annotations, onAdd, tool, color, size, pendingText, 
       onPointerUp={onPointerUp}
       style={{
         position:      "absolute", inset: 0,
-        width:         "100%",     height: "100%",
+        width:         "100%",    height: "100%",
         cursor:        tool === "text" ? "text" : tool === "eraser" ? "cell" : "crosshair",
         touchAction:   "none",
         pointerEvents: pendingText ? "none" : "all",
